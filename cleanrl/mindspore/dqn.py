@@ -1,65 +1,67 @@
 # docs and experiment results can be found at https://docs.cleanrl.dev/rl-algorithms/dqn/#dqnpy
 import argparse
+import copy
 import os
 import random
 import time
-from distutils.util import strtobool
 
+import sys
 import gym
+import math
 import numpy as np
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.optim as optim
 from stable_baselines3.common.buffers import ReplayBuffer
-from torch.utils.tensorboard import SummaryWriter
+import mindspore as ms
+from mindspore import ops, nn, ms_function
+from mindspore.common.initializer import Uniform, HeUniform
+from tensorboardX import SummaryWriter
+
+sys.path.append(os.getcwd())
+from cleanrl_utils.utils import sync_weight
 
 
 def parse_args():
     # fmt: off
     parser = argparse.ArgumentParser()
     parser.add_argument("--exp-name", type=str, default=os.path.basename(__file__).rstrip(".py"),
-        help="the name of this experiment")
+                        help="the name of this experiment")
     parser.add_argument("--seed", type=int, default=1,
-        help="seed of the experiment")
-    parser.add_argument("--torch-deterministic", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
-        help="if toggled, `torch.backends.cudnn.deterministic=False`")
-    parser.add_argument("--cuda", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
-        help="if toggled, cuda will be enabled by default")
-    parser.add_argument("--track", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
-        help="if toggled, this experiment will be tracked with Weights and Biases")
+                        help="seed of the experiment")
+    parser.add_argument("--cuda", default=False, action='store_true',
+                        help="if toggled, cuda will be enabled by default")
+    parser.add_argument("--track", default=False, action='store_true',
+                        help="if toggled, this experiment will be tracked with Weights and Biases")
     parser.add_argument("--wandb-project-name", type=str, default="cleanRL",
-        help="the wandb's project name")
+                        help="the wandb's project name")
     parser.add_argument("--wandb-entity", type=str, default=None,
-        help="the entity (team) of wandb's project")
-    parser.add_argument("--capture-video", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
-        help="whether to capture videos of the agent performances (check out `videos` folder)")
+                        help="the entity (team) of wandb's project")
+    parser.add_argument("--capture-video", default=False, action='store_true',
+                        help="whether to capture videos of the agent performances (check out `videos` folder)")
 
     # Algorithm specific arguments
     parser.add_argument("--env-id", type=str, default="CartPole-v1",
-        help="the id of the environment")
+                        help="the id of the environment")
     parser.add_argument("--total-timesteps", type=int, default=500000,
-        help="total timesteps of the experiments")
+                        help="total timesteps of the experiments")
     parser.add_argument("--learning-rate", type=float, default=2.5e-4,
-        help="the learning rate of the optimizer")
+                        help="the learning rate of the optimizer")
     parser.add_argument("--buffer-size", type=int, default=10000,
-        help="the replay memory buffer size")
+                        help="the replay memory buffer size")
     parser.add_argument("--gamma", type=float, default=0.99,
-        help="the discount factor gamma")
+                        help="the discount factor gamma")
     parser.add_argument("--target-network-frequency", type=int, default=500,
-        help="the timesteps it takes to update the target network")
+                        help="the timesteps it takes to update the target network")
     parser.add_argument("--batch-size", type=int, default=128,
-        help="the batch size of sample from the reply memory")
+                        help="the batch size of sample from the reply memory")
     parser.add_argument("--start-e", type=float, default=1,
-        help="the starting epsilon for exploration")
+                        help="the starting epsilon for exploration")
     parser.add_argument("--end-e", type=float, default=0.05,
-        help="the ending epsilon for exploration")
+                        help="the ending epsilon for exploration")
     parser.add_argument("--exploration-fraction", type=float, default=0.5,
-        help="the fraction of `total-timesteps` it takes from start-e to go end-e")
+                        help="the fraction of `total-timesteps` it takes from start-e to go end-e")
     parser.add_argument("--learning-starts", type=int, default=10000,
-        help="timestep to start learning")
+                        help="timestep to start learning")
     parser.add_argument("--train-frequency", type=int, default=10,
-        help="the frequency of training")
+                        help="the frequency of training")
     args = parser.parse_args()
     # fmt: on
     return args
@@ -81,18 +83,26 @@ def make_env(env_id, seed, idx, capture_video, run_name):
 
 
 # ALGO LOGIC: initialize agent here:
-class QNetwork(nn.Module):
+class QNetwork(nn.Cell):
     def __init__(self, env):
         super().__init__()
-        self.network = nn.Sequential(
-            nn.Linear(np.array(env.single_observation_space.shape).prod(), 120),
+        input_size = int(np.array(env.single_observation_space.shape).prod())
+        output_size = int(env.single_action_space.n)
+        self.network = nn.SequentialCell(
+            nn.Dense(input_size, 120,
+                     weight_init=HeUniform(negative_slope=math.sqrt(5)),
+                     bias_init=Uniform(scale=1 / math.sqrt(input_size))),
             nn.ReLU(),
-            nn.Linear(120, 84),
+            nn.Dense(120, 84,
+                     weight_init=HeUniform(negative_slope=math.sqrt(5)),
+                     bias_init=Uniform(scale=1 / math.sqrt(120))),
             nn.ReLU(),
-            nn.Linear(84, env.single_action_space.n),
+            nn.Dense(84, output_size,
+                     weight_init=HeUniform(negative_slope=math.sqrt(5)),
+                     bias_init=Uniform(scale=1 / math.sqrt(84))),
         )
 
-    def forward(self, x):
+    def construct(self, x):
         return self.network(x)
 
 
@@ -104,6 +114,11 @@ def linear_schedule(start_e: float, end_e: float, duration: int, t: int):
 if __name__ == "__main__":
     args = parse_args()
     run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{int(time.time())}"
+    if args.cuda:
+        ms.set_context(mode=ms.PYNATIVE_MODE, device_target="GPU", device_id=0)
+    else:
+        ms.set_context(mode=ms.PYNATIVE_MODE, device_target="CPU")
+
     if args.track:
         import wandb
 
@@ -125,39 +140,61 @@ if __name__ == "__main__":
     # TRY NOT TO MODIFY: seeding
     random.seed(args.seed)
     np.random.seed(args.seed)
-    torch.manual_seed(args.seed)
-    torch.backends.cudnn.deterministic = args.torch_deterministic
-
-    device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
+    ms.set_seed(args.seed)
 
     # env setup
     envs = gym.vector.SyncVectorEnv([make_env(args.env_id, args.seed, 0, args.capture_video, run_name)])
     assert isinstance(envs.single_action_space, gym.spaces.Discrete), "only discrete action space is supported"
 
-    q_network = QNetwork(envs).to(device)
-    optimizer = optim.Adam(q_network.parameters(), lr=args.learning_rate)
-    target_network = QNetwork(envs).to(device)
-    target_network.load_state_dict(q_network.state_dict())
+    q_network = QNetwork(envs)
+    target_network = copy.deepcopy(q_network)
+    q_network_list = nn.CellList()
+    q_network_list.append(q_network)
+    q_network_list.append(target_network)
+    optimizer = nn.Adam(q_network.trainable_params(), learning_rate=args.learning_rate)
+    sync_weight(model=q_network, model_old=target_network)
 
     rb = ReplayBuffer(
         args.buffer_size,
         envs.single_observation_space,
         envs.single_action_space,
-        device,
         handle_timeout_termination=True,
     )
     start_time = time.time()
+    gamma = args.gamma
+
+
+    def forward_fn(observations: ms.Tensor, actions: ms.Tensor, rewards: ms.Tensor,
+                   next_observations: ms.Tensor, dones: ms.Tensor):
+        target_max = target_network(next_observations).max(axis=1)
+        td_target = rewards.flatten() + gamma * target_max * (1 - dones.flatten())
+        old_val = ops.gather_elements(q_network(observations), dim=1, index=actions).squeeze()
+        loss = nn.MSELoss("mean")(ops.stop_gradient(td_target), old_val)
+        return loss, old_val
+
+
+    grad_fn = ops.value_and_grad(forward_fn, None, optimizer.parameters, has_aux=True)
+
+
+    @ms_function
+    def train_step(observations: ms.Tensor, actions: ms.Tensor, rewards: ms.Tensor,
+                   next_observations: ms.Tensor, dones: ms.Tensor):
+        (loss, old_val), grads = grad_fn(observations, actions, rewards, next_observations, dones)
+        optimizer(grads)
+        return loss, old_val
+
 
     # TRY NOT TO MODIFY: start the game
     obs = envs.reset()
     for global_step in range(args.total_timesteps):
         # ALGO LOGIC: put action logic here
-        epsilon = linear_schedule(args.start_e, args.end_e, args.exploration_fraction * args.total_timesteps, global_step)
+        epsilon = linear_schedule(args.start_e, args.end_e, args.exploration_fraction * args.total_timesteps,
+                                  global_step)
         if random.random() < epsilon:
             actions = np.array([envs.single_action_space.sample() for _ in range(envs.num_envs)])
         else:
-            q_values = q_network(torch.Tensor(obs).to(device))
-            actions = torch.argmax(q_values, dim=1).cpu().numpy()
+            q_values = q_network(ms.Tensor(obs))
+            actions = q_values.argmax(axis=1).asnumpy()
 
         # TRY NOT TO MODIFY: execute the game and log data.
         next_obs, rewards, dones, infos = envs.step(actions)
@@ -184,26 +221,23 @@ if __name__ == "__main__":
         # ALGO LOGIC: training.
         if global_step > args.learning_starts and global_step % args.train_frequency == 0:
             data = rb.sample(args.batch_size)
-            with torch.no_grad():
-                target_max, _ = target_network(data.next_observations).max(dim=1)
-                td_target = data.rewards.flatten() + args.gamma * target_max * (1 - data.dones.flatten())
-            old_val = q_network(data.observations).gather(1, data.actions).squeeze()
-            loss = F.mse_loss(td_target, old_val)
+            observations = ms.Tensor(data.observations.numpy(), dtype=ms.float32)
+            actions = ms.Tensor(data.actions.numpy(), dtype=ms.int32)
+            rewards = ms.Tensor(data.rewards.numpy(), dtype=ms.float32)
+            next_observations = ms.Tensor(data.next_observations.numpy(), dtype=ms.float32)
+            dones = ms.Tensor(data.dones.numpy(), dtype=ms.float32)
+
+            loss, old_val = train_step(observations, actions, rewards, next_observations, dones)
 
             if global_step % 100 == 0:
-                writer.add_scalar("losses/td_loss", loss, global_step)
-                writer.add_scalar("losses/q_values", old_val.mean().item(), global_step)
+                writer.add_scalar("losses/td_loss", loss.asnumpy(), global_step)
+                writer.add_scalar("losses/q_values", old_val.mean().asnumpy(), global_step)
                 print("SPS:", int(global_step / (time.time() - start_time)))
                 writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
 
-            # optimize the model
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-
             # update the target network
             if global_step % args.target_network_frequency == 0:
-                target_network.load_state_dict(q_network.state_dict())
+                a = sync_weight(model=q_network, model_old=target_network)
 
     envs.close()
     writer.close()

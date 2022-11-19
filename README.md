@@ -59,13 +59,11 @@ MindSpore version of [CleanRL](https://github.com/vwxyzjn/cleanrl)(771), for sup
 
 ## :computer: Example
 
-We can compare the same file in mindspore/torch / jax
-
-Here is a quick example of how to train and run PPO on a cartpole environment:
+We can compare the performance of the same file in different directories (mindspore/torch/jax).
 
 ```shell
 # classic control
-python cleanrl/torch/dqn.py --env-id CartPole-v1
+python cleanrl/mindspore/dqn.py --env-id CartPole-v1
 python cleanrl/ppo.py --env-id CartPole-v1
 python cleanrl/c51.py --env-id CartPole-v1
 
@@ -135,4 +133,4 @@ This codebase is based on CleanRL and msrl which are open-sourced. Please refer 
 
 ## :e-mail: Contact
 
-If you have any question, please email `604896160@qq.com`.
+If you have any question, please email `604896160@qq.com`.idia
