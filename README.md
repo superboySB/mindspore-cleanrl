@@ -59,12 +59,12 @@ MindSpore version of [CleanRL](https://github.com/vwxyzjn/cleanrl)(771), for sup
 
 ## :computer: Example
 
-We can compare the performance of the same file in different directories (mindspore/torch/jax).
+We can compare the performance of the same file in different ML packages, by just changing directories: mindspore/torch/jax.
 
 ```shell
 # classic control
 python cleanrl/mindspore/dqn.py --env-id CartPole-v1
-python cleanrl/ppo.py --env-id CartPole-v1
+python cleanrl/mindspore/ppo.py --env-id CartPole-v1
 python cleanrl/c51.py --env-id CartPole-v1
 
 # atari

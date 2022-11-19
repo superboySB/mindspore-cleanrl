@@ -12,7 +12,7 @@ import numpy as np
 from stable_baselines3.common.buffers import ReplayBuffer
 import mindspore as ms
 from mindspore import ops, nn, ms_function
-from mindspore.common.initializer import Uniform, HeUniform
+from mindspore.common.initializer import Uniform, HeUniform, initializer
 from tensorboardX import SummaryWriter
 
 sys.path.append(os.getcwd())
@@ -81,25 +81,23 @@ def make_env(env_id, seed, idx, capture_video, run_name):
 
     return thunk
 
+def layer_init(layer:nn.Cell, std=math.sqrt(5)):
+    layer.weight.set_data(initializer(HeUniform(negative_slope=std), layer.weight.shape, layer.weight.dtype))
+    layer.bias.set_data(initializer(Uniform(scale=1 / math.sqrt(layer.in_channels)), layer.bias.shape, layer.bias.dtype))
+
+    return layer
 
 # ALGO LOGIC: initialize agent here:
 class QNetwork(nn.Cell):
     def __init__(self, env):
         super().__init__()
         input_size = int(np.array(env.single_observation_space.shape).prod())
-        output_size = int(env.single_action_space.n)
         self.network = nn.SequentialCell(
-            nn.Dense(input_size, 120,
-                     weight_init=HeUniform(negative_slope=math.sqrt(5)),
-                     bias_init=Uniform(scale=1 / math.sqrt(input_size))),
+            layer_init(nn.Dense(input_size, 120)),
             nn.ReLU(),
-            nn.Dense(120, 84,
-                     weight_init=HeUniform(negative_slope=math.sqrt(5)),
-                     bias_init=Uniform(scale=1 / math.sqrt(120))),
+            layer_init(nn.Dense(120, 84)),
             nn.ReLU(),
-            nn.Dense(84, output_size,
-                     weight_init=HeUniform(negative_slope=math.sqrt(5)),
-                     bias_init=Uniform(scale=1 / math.sqrt(84))),
+            layer_init(nn.Dense(84, env.single_action_space.n)),
         )
 
     def construct(self, x):
@@ -160,9 +158,7 @@ if __name__ == "__main__":
         envs.single_action_space,
         handle_timeout_termination=True,
     )
-    start_time = time.time()
     gamma = args.gamma
-
 
     def forward_fn(observations: ms.Tensor, actions: ms.Tensor, rewards: ms.Tensor,
                    next_observations: ms.Tensor, dones: ms.Tensor):
@@ -185,6 +181,7 @@ if __name__ == "__main__":
 
 
     # TRY NOT TO MODIFY: start the game
+    start_time = time.time()
     obs = envs.reset()
     for global_step in range(args.total_timesteps):
         # ALGO LOGIC: put action logic here
