@@ -1,5 +1,5 @@
 # mindspore-cleanrl
-MindSpore version of [CleanRL](https://github.com/vwxyzjn/cleanrl)(771), for supporting online reinforcement learning algorithms
+MindSpore version of [CleanRL](https://github.com/vwxyzjn/cleanrl)(775), for supporting online reinforcement learning algorithms
 
 ## :wrench: Dependencies
 
@@ -59,7 +59,7 @@ MindSpore version of [CleanRL](https://github.com/vwxyzjn/cleanrl)(771), for sup
 
 ## :computer: Example
 
-We can compare the performance of the same file in different ML packages, by just changing directories: mindspore/torch/jax.
+We can compare the performance of the same file in different ML packages, by just changing directories: mindspore -> torch/jax.
 
 ```shell
 # classic control
