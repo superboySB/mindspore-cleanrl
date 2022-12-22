@@ -81,11 +81,14 @@ def make_env(env_id, seed, idx, capture_video, run_name):
 
     return thunk
 
-def layer_init(layer:nn.Cell, std=math.sqrt(5)):
+
+def layer_init(layer: nn.Cell, std=math.sqrt(5)):
     layer.weight.set_data(initializer(HeUniform(negative_slope=std), layer.weight.shape, layer.weight.dtype))
-    layer.bias.set_data(initializer(Uniform(scale=1 / math.sqrt(layer.in_channels)), layer.bias.shape, layer.bias.dtype))
+    layer.bias.set_data(
+        initializer(Uniform(scale=1 / math.sqrt(layer.in_channels)), layer.bias.shape, layer.bias.dtype))
 
     return layer
+
 
 # ALGO LOGIC: initialize agent here:
 class QNetwork(nn.Cell):
@@ -168,9 +171,7 @@ if __name__ == "__main__":
         loss = nn.MSELoss("mean")(ops.stop_gradient(td_target), old_val)
         return loss, old_val
 
-
     grad_fn = ops.value_and_grad(forward_fn, None, optimizer.parameters, has_aux=True)
-
 
     @ms_function
     def train_step(observations: ms.Tensor, actions: ms.Tensor, rewards: ms.Tensor,
@@ -216,21 +217,22 @@ if __name__ == "__main__":
         obs = next_obs
 
         # ALGO LOGIC: training.
-        if global_step > args.learning_starts and global_step % args.train_frequency == 0:
-            data = rb.sample(args.batch_size)
-            observations = ms.Tensor(data.observations.numpy(), dtype=ms.float32)
-            actions = ms.Tensor(data.actions.numpy(), dtype=ms.int32)
-            rewards = ms.Tensor(data.rewards.numpy(), dtype=ms.float32)
-            next_observations = ms.Tensor(data.next_observations.numpy(), dtype=ms.float32)
-            dones = ms.Tensor(data.dones.numpy(), dtype=ms.float32)
+        if global_step > args.learning_starts:
+            if global_step % args.train_frequency == 0:
+                data = rb.sample(args.batch_size)
+                observations = ms.Tensor(data.observations.numpy(), dtype=ms.float32)
+                actions = ms.Tensor(data.actions.numpy(), dtype=ms.int32)
+                rewards = ms.Tensor(data.rewards.numpy(), dtype=ms.float32)
+                next_observations = ms.Tensor(data.next_observations.numpy(), dtype=ms.float32)
+                dones = ms.Tensor(data.dones.numpy(), dtype=ms.float32)
 
-            loss, old_val = train_step(observations, actions, rewards, next_observations, dones)
+                loss, old_val = train_step(observations, actions, rewards, next_observations, dones)
 
-            if global_step % 100 == 0:
-                writer.add_scalar("losses/td_loss", loss.asnumpy(), global_step)
-                writer.add_scalar("losses/q_values", old_val.mean().asnumpy(), global_step)
-                print("SPS:", int(global_step / (time.time() - start_time)))
-                writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
+                if global_step % 100 == 0:
+                    writer.add_scalar("losses/td_loss", loss.asnumpy(), global_step)
+                    writer.add_scalar("losses/q_values", old_val.mean().asnumpy(), global_step)
+                    print("SPS:", int(global_step / (time.time() - start_time)))
+                    writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
 
             # update the target network
             if global_step % args.target_network_frequency == 0:

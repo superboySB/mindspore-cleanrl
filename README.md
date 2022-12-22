@@ -65,38 +65,7 @@ We can compare the performance of the same file in different ML packages, by jus
 # classic control
 python cleanrl/mindspore/dqn.py --env-id CartPole-v1
 python cleanrl/mindspore/ppo.py --env-id CartPole-v1
-python cleanrl/c51.py --env-id CartPole-v1
-
-# atari
-poetry install --with atari
-python cleanrl/dqn_atari.py --env-id BreakoutNoFrameskip-v4
-python cleanrl/c51_atari.py --env-id BreakoutNoFrameskip-v4
-python cleanrl/ppo_atari.py --env-id BreakoutNoFrameskip-v4
-
-# NEW: 3-4x side-effects free speed up with envpool's atari (only available to linux)
-poetry install --with envpool
-python cleanrl/ppo_atari_envpool.py --env-id BreakoutNoFrameskip-v4
-# Learn Pong-v5 in ~5-10 mins
-# Side effects such as lower sample efficiency might occur
-poetry run python ppo_atari_envpool.py --clip-coef=0.2 --num-envs=16 --num-minibatches=8 --num-steps=128 --update-epochs=3
-
-# pybullet
-poetry install --with pybullet
-python cleanrl/td3_continuous_action.py --env-id MinitaurBulletDuckEnv-v0
-python cleanrl/ddpg_continuous_action.py --env-id MinitaurBulletDuckEnv-v0
-python cleanrl/sac_continuous_action.py --env-id MinitaurBulletDuckEnv-v0
-
-# procgen
-poetry install --with procgen
-python cleanrl/ppo_procgen.py --env-id starpilot
-python cleanrl/ppg_procgen.py --env-id starpilot
-
-# ppo + lstm
-python cleanrl/ppo_atari_lstm.py --env-id BreakoutNoFrameskip-v4
-python cleanrl/ppo_memory_env_lstm.py
 ```
-
-
 
 
 ## :checkered_flag: Testing & Rendering
@@ -133,4 +102,4 @@ This codebase is based on CleanRL and msrl which are open-sourced. Please refer 
 
 ## :e-mail: Contact
 
-If you have any question, please email `604896160@qq.com`.idia
+If you have any question, please email `daizipeng@bit.edu.cn`.

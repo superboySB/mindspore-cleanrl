@@ -166,24 +166,25 @@ if __name__ == "__main__":
 
     agent = Agent(envs)
     optimizer = nn.Adam(agent.trainable_params(), learning_rate=args.learning_rate, eps=1e-5)
+    optimizer.learning_rate.set_data(0.025)
 
     # ALGO Logic: Storage setup
-    obs = ops.zeros((args.num_steps, args.num_envs) + envs.single_observation_space.shape)
-    actions = ops.zeros((args.num_steps, args.num_envs) + envs.single_action_space.shape)
-    logprobs = ops.zeros((args.num_steps, args.num_envs))
-    rewards = ops.zeros((args.num_steps, args.num_envs))
-    dones = ops.zeros((args.num_steps, args.num_envs))
-    values = ops.zeros((args.num_steps, args.num_envs))
+    obs = ms.numpy.zeros((args.num_steps, args.num_envs) + envs.single_observation_space.shape)
+    actions = ms.numpy.zeros((args.num_steps, args.num_envs) + envs.single_action_space.shape)
+    logprobs = ms.numpy.zeros((args.num_steps, args.num_envs))
+    rewards = ms.numpy.zeros((args.num_steps, args.num_envs))
+    dones = ms.numpy.zeros((args.num_steps, args.num_envs))
+    values = ms.numpy.zeros((args.num_steps, args.num_envs))
 
     # TRY NOT TO MODIFY: start the game
     global_step = 0
     start_time = time.time()
     next_obs = ms.Tensor(envs.reset())
-    next_done = ops.zeros(args.num_envs)
+    next_done = ms.numpy.zeros(args.num_envs)
     num_updates = args.total_timesteps // args.batch_size
     norm_adv, clip_coef, clip_vloss, ent_coef, vf_coef, max_grad_norm = args.norm_adv, args.clip_coef, \
-                                                                        args.clip_vloss, args.ent_coef, \
-                                                                        args.vf_coef, args.max_grad_norm
+        args.clip_vloss, args.ent_coef, \
+        args.vf_coef, args.max_grad_norm
 
 
     def forward_fn(b_observations, b_actions, b_logprobs, b_returns, b_advantages, b_values):
@@ -228,7 +229,7 @@ if __name__ == "__main__":
     def train_step(b_observations, b_actions, b_logprobs, b_returns, b_advantages, b_values):
         (loss, v_loss, pg_loss, entropy_loss, logratio, ratio), grads = grad_fn(b_observations, b_actions, b_logprobs,
                                                                                 b_returns, b_advantages, b_values)
-        grads = ops.clip_by_global_norm(grads, clip_norm=max_grad_norm)  # TODO
+        grads = ops.clip_by_global_norm(grads, clip_norm=max_grad_norm)
         optimizer(grads)
         return v_loss, pg_loss, entropy_loss, logratio, ratio
 
@@ -238,7 +239,7 @@ if __name__ == "__main__":
         if args.anneal_lr:
             frac = 1.0 - (update - 1.0) / num_updates
             lrnow = frac * args.learning_rate
-            optimizer.param_groups[0]["lr"] = lrnow
+            optimizer.learning_rate.set_data(lrnow)
 
         for step in range(0, args.num_steps):
             global_step += 1 * args.num_envs
@@ -264,7 +265,7 @@ if __name__ == "__main__":
                     break
 
         # bootstrap value if not done
-        next_value = agent.get_value(next_obs).reshape((1, -1))
+        next_value = agent.get_value(next_obs).reshape((-1,))
         advantages = ops.zeros_like(rewards)
         lastgaelam = 0
         for t in reversed(range(args.num_steps)):
@@ -275,7 +276,8 @@ if __name__ == "__main__":
                 nextnonterminal = 1.0 - dones[t + 1]
                 nextvalues = values[t + 1]
             delta = rewards[t] + args.gamma * nextvalues * nextnonterminal - values[t]
-            advantages[t] = lastgaelam = delta + args.gamma * args.gae_lambda * nextnonterminal * lastgaelam
+            lastgaelam = delta + args.gamma * args.gae_lambda * nextnonterminal * lastgaelam
+            advantages[t] = lastgaelam
         returns = advantages + values
 
         # flatten the batch
@@ -293,7 +295,7 @@ if __name__ == "__main__":
             np.random.shuffle(b_inds)
             for start in range(0, args.batch_size, args.minibatch_size):
                 end = start + args.minibatch_size
-                mb_inds = b_inds[start:end]
+                mb_inds = b_inds[start:end].tolist()
                 v_loss, pg_loss, entropy_loss, logratio, ratio = train_step(b_obs[mb_inds],
                                                                             ops.cast(b_actions, ms.int32)[mb_inds],
                                                                             b_logprobs[mb_inds],
@@ -301,6 +303,7 @@ if __name__ == "__main__":
                                                                             b_advantages[mb_inds],
                                                                             b_values[mb_inds]
                                                                             )
+
                 # calculate approx_kl http://joschu.net/blog/kl-approx.html
                 old_approx_kl = (-logratio).mean()
                 approx_kl = ((ratio - 1) - logratio).mean()
@@ -315,7 +318,7 @@ if __name__ == "__main__":
         explained_var = np.nan if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
 
         # TRY NOT TO MODIFY: record rewards for plotting purposes
-        writer.add_scalar("charts/learning_rate", optimizer.param_groups[0]["lr"], global_step)
+        writer.add_scalar("charts/learning_rate", lrnow, global_step)
         writer.add_scalar("losses/value_loss", v_loss.asnumpy(), global_step)
         writer.add_scalar("losses/policy_loss", pg_loss.asnumpy(), global_step)
         writer.add_scalar("losses/entropy", entropy_loss.asnumpy(), global_step)

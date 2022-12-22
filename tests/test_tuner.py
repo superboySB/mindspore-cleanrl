@@ -5,7 +5,7 @@ from cleanrl_utils.tuner import Tuner
 
 def test_tuner():
     tuner = Tuner(
-        script="cleanrl/ppo.py",
+        script="cleanrl/torch/ppo.py",
         metric="charts/episodic_return",
         metric_last_n_average_window=50,
         direction="maximize",
